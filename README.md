@@ -1,4 +1,4 @@
-# Claude Code statusline for Windows + PowerShell
+# Claude Code statusline for Windows
 
 Windows の Git Bash 環境で動作する Claude Code 用カスタム statusline です。
 コンテキストウィンドウの使用率と API 利用状況をリアルタイムで確認できます。
