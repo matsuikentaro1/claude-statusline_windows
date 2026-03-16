@@ -1,0 +1,6 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "\"/path/to/claude-statusline_windows/statusline.sh\""
+  }
+}
