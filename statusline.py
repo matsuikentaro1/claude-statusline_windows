@@ -56,36 +56,37 @@ def format_reset_at(value, mode):
         return "--"
 
 def get_git_info(cwd):
-    repo_name = os.path.basename(cwd) if cwd else ""
+    dir_name = os.path.basename(cwd) if cwd else ""
+    repo_name = dir_name
     branch = None
     dirty = False
     try:
         top = subprocess.check_output(
             ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd, stderr=subprocess.DEVNULL, text=True
+            cwd=cwd, stderr=subprocess.DEVNULL, text=True, timeout=3
         ).strip()
         repo_name = os.path.basename(top)
         branch = subprocess.check_output(
             ["git", "symbolic-ref", "--short", "HEAD"],
-            cwd=cwd, stderr=subprocess.DEVNULL, text=True
+            cwd=cwd, stderr=subprocess.DEVNULL, text=True, timeout=3
         ).strip()
     except Exception:
         try:
             branch = subprocess.check_output(
                 ["git", "rev-parse", "--short", "HEAD"],
-                cwd=cwd, stderr=subprocess.DEVNULL, text=True
+                cwd=cwd, stderr=subprocess.DEVNULL, text=True, timeout=3
             ).strip()
         except Exception:
             pass
     try:
         status = subprocess.check_output(
             ["git", "status", "--porcelain", "--untracked-files=normal"],
-            cwd=cwd, stderr=subprocess.DEVNULL, text=True
+            cwd=cwd, stderr=subprocess.DEVNULL, text=True, timeout=3
         ).strip()
         dirty = bool(status)
     except Exception:
         pass
-    return repo_name, branch, dirty
+    return dir_name, repo_name, branch, dirty
 
 def build_usage_line(label, pct, resets_at, active_color, mode):
     label_text = colorize(label.ljust(7), "38;5;252")
@@ -96,6 +97,7 @@ def build_usage_line(label, pct, resets_at, active_color, mode):
 
 try:
     if sys.platform == "win32":
+        sys.stdin.reconfigure(encoding="utf-8")
         sys.stdout.reconfigure(encoding="utf-8")
 
     data = json.load(sys.stdin)
@@ -106,11 +108,12 @@ try:
             safe_get(data, "model", "name") or \
             safe_get(data, "model", "id") or "Claude Code"
 
-    repo_name, branch, dirty = get_git_info(cwd)
-    repo_segment = colorize(repo_name, "38;5;45")
+    dir_name, repo_name, branch, dirty = get_git_info(cwd)
+    dir_segment = colorize(dir_name, "38;5;45")
     if branch:
         suffix = "*" if dirty else ""
-        repo_segment += " " + colorize(f"({branch}{suffix})", "38;5;47")
+        git_segment = colorize(repo_name, "38;5;45") + " " + colorize(f"({branch}{suffix})", "38;5;47")
+        dir_segment = git_segment if repo_name == dir_name else dir_segment + "  " + git_segment
 
     context_pct = to_percent(safe_get(data, "context_window", "used_percentage"))
     current_pct = to_percent(safe_get(data, "rate_limits", "five_hour", "used_percentage"))
@@ -118,7 +121,7 @@ try:
     weekly_pct = to_percent(safe_get(data, "rate_limits", "seven_day", "used_percentage"))
     weekly_reset = safe_get(data, "rate_limits", "seven_day", "resets_at")
 
-    top_segments = [colorize(model, "38;5;39"), repo_segment]
+    top_segments = [colorize(model, "38;5;39"), dir_segment]
     top_line = "  |  ".join(s for s in top_segments if s)
 
     if context_pct is None:
