@@ -24,28 +24,6 @@ function Get-EnvBool {
   return $value -match '^(?i:1|true|yes|on)$'
 }
 
-function Get-EnvInt {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$Name,
-
-    [Parameter(Mandatory = $true)]
-    [int]$DefaultValue
-  )
-
-  $value = [Environment]::GetEnvironmentVariable($Name)
-  if ([string]::IsNullOrWhiteSpace($value)) {
-    return $DefaultValue
-  }
-
-  $parsed = 0
-  if ([int]::TryParse($value, [ref]$parsed)) {
-    return $parsed
-  }
-
-  return $DefaultValue
-}
-
 function Get-NestedValue {
   param(
     [AllowNull()]
@@ -218,147 +196,6 @@ function Get-GitInfo {
   }
 }
 
-function Get-CacheDirectory {
-  $baseDirectory = $env:LOCALAPPDATA
-  if ([string]::IsNullOrWhiteSpace($baseDirectory)) {
-    $baseDirectory = Join-Path -Path $HOME -ChildPath '.claude'
-  }
-
-  $directory = Join-Path -Path $baseDirectory -ChildPath 'ClaudeCodeStatusline'
-  if (-not (Test-Path -LiteralPath $directory)) {
-    New-Item -ItemType Directory -Path $directory -Force | Out-Null
-  }
-
-  return $directory
-}
-
-function Get-CacheFilePath {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$Name
-  )
-
-  return (Join-Path -Path (Get-CacheDirectory) -ChildPath $Name)
-}
-
-function Read-JsonFile {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$Path
-  )
-
-  if (-not (Test-Path -LiteralPath $Path)) {
-    return $null
-  }
-
-  try {
-    $content = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
-    if ([string]::IsNullOrWhiteSpace($content)) {
-      return $null
-    }
-
-    return ($content | ConvertFrom-Json)
-  }
-  catch {
-    return $null
-  }
-}
-
-function Write-JsonFile {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$Path,
-
-    [Parameter(Mandatory = $true)]
-    $Value
-  )
-
-  try {
-    $directory = Split-Path -Path $Path -Parent
-    if (-not (Test-Path -LiteralPath $directory)) {
-      New-Item -ItemType Directory -Path $directory -Force | Out-Null
-    }
-
-    $json = $Value | ConvertTo-Json -Depth 8 -Compress
-    [System.IO.File]::WriteAllText($Path, $json, $utf8NoBom)
-  }
-  catch {
-  }
-}
-
-function Get-UsageFromCache {
-  $cachePath = Get-CacheFilePath -Name 'usage-cache.json'
-  return (Read-JsonFile -Path $cachePath)
-}
-
-function Save-UsageToCache {
-  param(
-    [Parameter(Mandatory = $true)]
-    $UsageData
-  )
-
-  $payload = [pscustomobject]@{
-    fetched_at = (Get-Date).ToUniversalTime().ToString('o')
-    data = $UsageData
-  }
-
-  Write-JsonFile -Path (Get-CacheFilePath -Name 'usage-cache.json') -Value $payload
-}
-
-function Get-UsageApiData {
-  $ttlSeconds = Get-EnvInt -Name 'CC_STATUSLINE_CACHE_TTL_SECONDS' -DefaultValue 60
-  if ($ttlSeconds -lt 10) {
-    $ttlSeconds = 10
-  }
-
-  $cached = Get-UsageFromCache
-  if ($null -ne $cached) {
-    try {
-      $fetchedAt = [DateTime]::Parse($cached.fetched_at, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
-      if ((New-TimeSpan -Start $fetchedAt.ToUniversalTime() -End (Get-Date).ToUniversalTime()).TotalSeconds -lt $ttlSeconds) {
-        return $cached.data
-      }
-    }
-    catch {
-    }
-  }
-
-  $credentialsPath = Join-Path -Path $HOME -ChildPath '.claude\.credentials.json'
-  if (-not (Test-Path -LiteralPath $credentialsPath)) {
-    if ($null -ne $cached) {
-      return $cached.data
-    }
-
-    return $null
-  }
-
-  try {
-    $credentials = Get-Content -LiteralPath $credentialsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $token = Get-NestedValue -Object $credentials -Path @('claudeAiOauth', 'accessToken')
-    if ([string]::IsNullOrWhiteSpace($token)) {
-      throw 'access token is missing'
-    }
-
-    $headers = @{
-      Authorization = "Bearer $token"
-      Accept = 'application/json'
-      'anthropic-beta' = 'oauth-2025-04-20'
-      'User-Agent' = 'statusline-for-windows/1.0'
-    }
-
-    $response = Invoke-RestMethod -Uri 'https://api.anthropic.com/api/oauth/usage' -Headers $headers -Method Get -TimeoutSec 5
-    Save-UsageToCache -UsageData $response
-    return $response
-  }
-  catch {
-    if ($null -ne $cached) {
-      return $cached.data
-    }
-
-    return $null
-  }
-}
-
 function Convert-ToPercent {
   param(
     [AllowNull()]
@@ -386,44 +223,6 @@ function Convert-ToPercent {
   }
 }
 
-function Get-ExtraUsagePercent {
-  param(
-    [AllowNull()]
-    $UsageData
-  )
-
-  if ($null -eq $UsageData) {
-    return $null
-  }
-
-  $enabled = Get-NestedValue -Object $UsageData -Path @('extra_usage', 'is_enabled')
-  if (-not $enabled) {
-    return $null
-  }
-
-  $directUtilization = Convert-ToPercent -Value (Get-NestedValue -Object $UsageData -Path @('extra_usage', 'utilization'))
-  if ($null -ne $directUtilization) {
-    return $directUtilization
-  }
-
-  $monthlyLimit = Get-NestedValue -Object $UsageData -Path @('extra_usage', 'monthly_limit')
-  $usedCredits = Get-NestedValue -Object $UsageData -Path @('extra_usage', 'used_credits')
-  if ($null -eq $monthlyLimit -or $null -eq $usedCredits) {
-    return $null
-  }
-
-  try {
-    if ([double]$monthlyLimit -le 0) {
-      return $null
-    }
-
-    return (Convert-ToPercent -Value (([double]$usedCredits / [double]$monthlyLimit) * 100.0))
-  }
-  catch {
-    return $null
-  }
-}
-
 function Get-BlockMeterText {
   param(
     [AllowNull()]
@@ -440,8 +239,8 @@ function Get-BlockMeterText {
     return (Colorize -Text '--' -Code $EmptyCode)
   }
 
-  $filledSymbol = [string][char]0x2588  # █
-  $emptySymbol = [string][char]0x2591   # ░
+  $filledSymbol = [string][char]0x2588  # filled block
+  $emptySymbol = [string][char]0x2591   # light shade
   if ($script:UseAscii) {
     $filledSymbol = '#'
     $emptySymbol = '.'
@@ -517,13 +316,13 @@ function Format-ResetAt {
   }
 
   try {
-    $date = [DateTime]$Value
-    $local = $date.ToLocalTime()
+    $epoch = [double]$Value
+    $date = [DateTimeOffset]::FromUnixTimeSeconds([long]$epoch).LocalDateTime
     if ($Mode -eq 'current') {
-      return $local.ToString('HH:mm')
+      return $date.ToString('HH:mm')
     }
 
-    return $local.ToString('M/d HH:mm')
+    return $date.ToString('M/d HH:mm')
   }
   catch {
     return '--'
@@ -608,21 +407,16 @@ try {
 
   $contextPercent = Convert-ToPercent -Value (Get-NestedValue -Object $statusInput -Path @('context_window', 'used_percentage'))
 
-  $usageData = Get-UsageApiData
-  $currentPercent = Convert-ToPercent -Value (Get-NestedValue -Object $usageData -Path @('five_hour', 'utilization'))
-  $currentReset = Get-NestedValue -Object $usageData -Path @('five_hour', 'resets_at')
-  $weeklyPercent = Convert-ToPercent -Value (Get-NestedValue -Object $usageData -Path @('seven_day', 'utilization'))
-  $weeklyReset = Get-NestedValue -Object $usageData -Path @('seven_day', 'resets_at')
-  $extraPercent = Get-ExtraUsagePercent -UsageData $usageData
+  # Read rate_limits from stdin JSON (provided by Claude Code v2.1.80+)
+  $currentPercent = Convert-ToPercent -Value (Get-NestedValue -Object $statusInput -Path @('rate_limits', 'five_hour', 'used_percentage'))
+  $currentReset = Get-NestedValue -Object $statusInput -Path @('rate_limits', 'five_hour', 'resets_at')
+  $weeklyPercent = Convert-ToPercent -Value (Get-NestedValue -Object $statusInput -Path @('rate_limits', 'seven_day', 'used_percentage'))
+  $weeklyReset = Get-NestedValue -Object $statusInput -Path @('rate_limits', 'seven_day', 'resets_at')
 
   $topSegments = @(
     (Colorize -Text $modelName -Code '38;5;39'),
     $repoSegment
   )
-
-  if ($null -ne $extraPercent) {
-    $topSegments += (Colorize -Text ("extra {0}%" -f $extraPercent) -Code '38;5;220')
-  }
 
   $topLine = Join-StatusSegment -Segments $topSegments
 
