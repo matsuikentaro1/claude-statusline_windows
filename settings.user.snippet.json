@@ -1,6 +1,6 @@
 {
   "statusLine": {
     "type": "command",
-    "command": "\"/path/to/claude-statusline_windows/statusline.sh\""
+    "command": "python \"/path/to/claude-statusline_windows/statusline.py\""
   }
 }

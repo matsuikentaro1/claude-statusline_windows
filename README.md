@@ -1,21 +1,22 @@
 # Claude Code statusline for Windows
 
-Windows の Git Bash 環境で動作する Claude Code 用カスタム statusline です。
-コンテキストウィンドウの使用率と API 利用状況をリアルタイムで確認できます。
+Windows 環境で動作する Claude Code 用カスタム statusline です。
+コンテキストウィンドウの使用率と API レート制限をリアルタイムで確認できます。
 
 > **Note:** statusline は Claude Code CLI 専用の機能です。VSCode 拡張機能のチャットパネルには表示されません。VSCode 内で使う場合は統合ターミナル (`Ctrl+``) から `claude` コマンドで CLI を起動してください。
 
-## v2 アップデート (2026-03-21)
+## 変更履歴
 
-Claude Code v2.1.80 で公式に `/statusline` コマンドが追加され、stdin の JSON に `rate_limits` フィールド（5時間/7日枠の使用率・リセット時刻）が含まれるようになりました。
+### v2 (2026-03-21)
 
+Claude Code v2.1.80 で stdin の JSON に `rate_limits` フィールドが追加されました。
 これに伴い、本スクリプトを大幅に簡素化しました:
 
-- **削除**: Anthropic OAuth API への直接アクセス、資格情報の読み取り、キャッシュ機構 (約100行削減)
-- **変更**: rate limit 情報を Claude Code 本体が提供する `rate_limits` フィールドから取得するように変更
-- **維持**: 表示フォーマット、メーター、Git 情報、カラー表示はそのまま
+- **Python に移行**: PowerShell ベースから Python ベースに変更。起動が高速に
+- **OAuth API 廃止**: rate limit 情報を Claude Code 本体が提供する `rate_limits` フィールドから取得するように変更。資格情報の読み取り・キャッシュ機構が不要に (約200行削減)
+- **bash ラッパー不要**: `statusline.sh` を介さず Python を直接呼び出す構成に
 
-> 公式の `/statusline` コマンドは statusline スクリプトを自動生成するヘルパーです。本リポジトリは Windows Git Bash 環境に特化したカスタム statusline を提供します。
+> 公式の `/statusline` コマンドは statusline スクリプトを自動生成するヘルパーです。本リポジトリは Windows 環境に特化したカスタム statusline を提供します。
 
 ## 表示内容
 
@@ -43,9 +44,8 @@ compact エラーを防ぐため、早めの `/compact` 実行や新規セッシ
 ## 前提条件
 
 - Windows 10/11
-- Git Bash (Git for Windows に同梱)
-- PowerShell (`pwsh` 推奨、Windows PowerShell 5.1 でも動作)
-- Claude Code CLI v2.1.80 以降がインストール済み
+- Python 3.x
+- Claude Code CLI v2.1.80 以降
 
 ## インストール
 
@@ -58,7 +58,7 @@ compact エラーを防ぐため、早めの `/compact` 実行や新規セッシ
 2. Claude Code に statusline を設定します。Claude Code のセッション内で以下のように依頼してください。
 
    ```
-   claude-statusline_windows リポジトリの statusline.sh を
+   claude-statusline_windows リポジトリの statusline.py を
    グローバル設定 (~/.claude/settings.json) の statusLine に登録してください。
    パスは私の環境に合わせて絶対パスで設定してください。
    ```
@@ -70,12 +70,10 @@ compact エラーを防ぐため、早めの `/compact` 実行や新規セッシ
    {
      "statusLine": {
        "type": "command",
-       "command": "\"/path/to/claude-statusline_windows/statusline.sh\""
+       "command": "python \"/path/to/claude-statusline_windows/statusline.py\""
      }
    }
    ```
-
-   参考: `settings.user.snippet.json` にサンプルがあります。
 
 3. Claude Code を再起動するか、新しいセッションを開始します。
 
@@ -83,15 +81,16 @@ compact エラーを防ぐため、早めの `/compact` 実行や新規セッシ
 
 | ファイル | 説明 |
 |---|---|
-| `statusline.ps1` | statusline 本体。stdin JSON からコンテキスト・Git 情報・rate limit を取得して表示 |
-| `statusline.sh` | Git Bash ラッパー。`pwsh` → `powershell.exe` の順にフォールバック |
+| `statusline.py` | statusline 本体 (Python)。stdin JSON からコンテキスト・Git 情報・rate limit を取得して表示 |
+| `statusline.ps1` | (レガシー) PowerShell 版 statusline。v1 互換用 |
+| `statusline.sh` | (レガシー) Git Bash ラッパー。v1 で `statusline.ps1` を呼び出すために使用 |
 | `settings.user.snippet.json` | settings.json に追加する設定のサンプル |
 
 ## 仕組み
 
-1. Claude Code が `statusline.sh` を Git Bash 経由で実行
-2. `statusline.sh` が PowerShell (`pwsh` or `powershell.exe`) を起動
-3. `statusline.ps1` が stdin から Claude Code の JSON データ (モデル情報・コンテキスト使用率・rate limit など) を受け取る
+1. Claude Code が `statusline.py` を実行
+2. `statusline.py` が stdin から Claude Code の JSON データ (モデル情報・コンテキスト使用率・rate limit など) を受け取る
+3. Git コマンドでリポジトリ情報を取得
 4. 整形して stdout に出力 → Claude Code がターミナル下部に表示
 
 ## 環境変数
@@ -105,5 +104,4 @@ compact エラーを防ぐため、早めの `/compact` 実行や新規セッシ
 
 ## 補足
 
-- 日本語 Windows を考慮し、PowerShell 側の stdin/stdout を UTF-8 に固定しています。
 - `rate_limits` は Claude.ai サブスクライバー (Pro/Max) のみで、最初の API レスポンス後に表示されます。起動直後は `--` と表示されます。
