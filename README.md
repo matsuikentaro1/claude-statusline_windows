@@ -81,9 +81,7 @@ compact エラーを防ぐため、早めの `/compact` 実行や新規セッシ
 
 | ファイル | 説明 |
 |---|---|
-| `statusline.py` | statusline 本体 (Python)。stdin JSON からコンテキスト・Git 情報・rate limit を取得して表示 |
-| `statusline.ps1` | (レガシー) PowerShell 版 statusline。v1 互換用 |
-| `statusline.sh` | (レガシー) Git Bash ラッパー。v1 で `statusline.ps1` を呼び出すために使用 |
+| `statusline.py` | statusline 本体。stdin JSON からコンテキスト・Git 情報・rate limit を取得して表示 |
 | `settings.user.snippet.json` | settings.json に追加する設定のサンプル |
 
 ## 仕組み
