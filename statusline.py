@@ -109,10 +109,10 @@ try:
             safe_get(data, "model", "id") or "Claude Code"
 
     dir_name, repo_name, branch, dirty = get_git_info(cwd)
-    dir_segment = colorize(dir_name, "38;5;45")
+    dir_segment = colorize(dir_name, "38;5;39")
     if branch:
         suffix = "*" if dirty else ""
-        git_segment = colorize(repo_name, "38;5;45") + " " + colorize(f"({branch}{suffix})", "38;5;47")
+        git_segment = colorize(repo_name, "38;5;39") + " " + colorize(f"({branch}{suffix})", "38;5;47")
         dir_segment = git_segment if repo_name == dir_name else dir_segment + "  " + git_segment
 
     context_pct = to_percent(safe_get(data, "context_window", "used_percentage"))
